@@ -287,15 +287,7 @@ async function startBroadcast(sessionId) {
         authorizedViewers.add(conn.peer);
         dataConnection = conn;
         conn.send({ type: 'auth-result', success: true, message: 'Password correct. Sending video.' });
-        gpsStatus.textContent = 'Viewer authorized. Starting stream.';
-
-        if (!currentCall) {
-          const viewerCall = peer.call(conn.peer, stream);
-          currentCall = viewerCall;
-          logStatus('Viewer connected. Streaming video...');
-          viewerCall.on('close', () => logStatus('Viewer disconnected.'));
-          viewerCall.on('error', (err) => console.error(err));
-        }
+        gpsStatus.textContent = 'Viewer authorized. Waiting for viewer request.';
       }
       if (data.type === 'chat') {
         appendChatMessage('Viewer', data.text);
@@ -366,8 +358,14 @@ function joinAsViewer(sessionId) {
           showPanel(controlsPanel);
           return;
         }
-        logStatus('Authorized; waiting for video...');
+        logStatus('Authorized; requesting host video...');
         showPanel(viewerPanel);
+        try {
+          const emptyStream = new MediaStream();
+          peer.call(sessionId, emptyStream);
+        } catch (err) {
+          console.warn('Viewer stream request failed:', err);
+        }
         return;
       }
       if (data.type === 'gps-update') {
