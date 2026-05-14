@@ -263,6 +263,7 @@ async function startBroadcast(sessionId) {
   }
 
   peer.on('call', (call) => {
+    console.log('Host received call from', call.peer, 'authorized=', authorizedViewers.has(call.peer));
     if (authorizedViewers.has(call.peer)) {
       call.answer(stream);
       currentCall = call;
@@ -358,14 +359,18 @@ function joinAsViewer(sessionId) {
           showPanel(controlsPanel);
           return;
         }
-        logStatus('Authorized; requesting host video...');
-        showPanel(viewerPanel);
-        try {
-          const emptyStream = new MediaStream();
-          peer.call(sessionId, emptyStream);
-        } catch (err) {
-          console.warn('Viewer stream request failed:', err);
-        }
+          logStatus('Authorized; requesting host video...');
+          showPanel(viewerPanel);
+          try {
+            peer.call(sessionId, null);
+          } catch (err) {
+            console.warn('Viewer stream request failed, retrying with empty stream:', err);
+            try {
+              peer.call(sessionId, new MediaStream());
+            } catch (retryErr) {
+              console.error('Viewer stream request retry failed:', retryErr);
+            }
+          }
         return;
       }
       if (data.type === 'gps-update') {
