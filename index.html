@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FollowMe P2P Stream</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { font-family: Inter, sans-serif; margin: 0; padding: 0; background: #090b10; color: #f9f3b1; }
+    main { padding: 20px; max-width: 900px; margin: 0 auto; }
+    .panel { background: #111722; border: 1px solid #2b3240; border-radius: 18px; padding: 22px; margin-bottom: 18px; }
+    .warning { background: #2f2d1f; color: #f8d75b; border: 1px solid #4d4821; border-radius: 12px; padding: 14px; margin-top: 12px; }
+    fieldset { border: 1px solid #2b3240; border-radius: 16px; padding: 18px; margin-bottom: 16px; }
+    legend { font-size: 0.95rem; letter-spacing: 0.08em; color: #f6e8a3; padding: 0 8px; }
+    label { display: block; margin-bottom: 10px; color: #ddd8ac; font-size: 0.95rem; }
+    input[type=text] { width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 14px; border: 1px solid #35404f; background: #101720; color: #fdf6bd; margin-top: 6px; }
+    button { width: 100%; box-sizing: border-box; padding: 14px 16px; border-radius: 14px; border: none; cursor: pointer; background: #ffcc2d; color: #131921; font-weight: 700; font-size: 0.95rem; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+    button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 28px rgba(255,204,45,0.2); }
+    button:disabled { background: #7d783a; color: #202a32; cursor: not-allowed; }
+    .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+    video { width: 100%; border-radius: 18px; background: #0d1117; min-height: 240px; }
+    #map { height: 320px; border-radius: 18px; }
+    .info { margin-top: 10px; font-size: 0.92rem; color: #d8cf96; }
+    .status-grid { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 16px; }
+    .status-card { flex: 1; min-width: 140px; background: #131a24; border: 1px solid #2f3846; border-radius: 16px; padding: 16px; display: flex; align-items: center; gap: 12px; }
+    .status-dot { width: 16px; height: 16px; border-radius: 50%; background: #3a4a2f; box-shadow: inset 0 0 0 rgba(0,0,0,0.2); transition: all 0.25s ease; }
+    .status-dot.active { background: #c9ff84; box-shadow: 0 0 18px rgba(201,255,132,0.45); }
+    .status-label { color: #f3e79a; font-size: 0.92rem; letter-spacing: 0.06em; text-transform: uppercase; }
+    .chat-box { margin-top: 18px; background: #0f1722; border: 1px solid #24303e; border-radius: 16px; padding: 14px; }
+    .chat-log { max-height: 180px; overflow-y: auto; color: #dbd3a4; font-size: 0.92rem; line-height: 1.5; padding: 8px; background: #0b121d; border-radius: 12px; border: 1px solid #1f2b39; margin-bottom: 10px; }
+    .chat-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+    .chat-input { width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid #2b3747; background: #101720; color: #f7e9a6; }
+    .chat-send { width: auto; padding: 10px 16px; border-radius: 12px; border: none; background: #ffcc2d; color: #131921; font-weight: 700; cursor: pointer; }
+    .hidden { display: none !important; }
+    .section-title { margin: 0 0 14px; color: #f9ecaf; font-size: 1rem; letter-spacing: 0.06em; }
+    .share { display: none; }
+    .panel h2 { margin: 0 0 12px; font-size: 1rem; color: #f7e0a0; }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel" id="controlsPanel">
+      <fieldset>
+        <legend>Session</legend>
+        <label>
+          Session ID
+          <input id="sessionId" type="text" placeholder="Enter or create an ID" />
+        </label>
+        <label>
+          Password
+          <input id="sessionPassword" type="text" placeholder="Password" />
+        </label>
+        <button id="createSession">Start stream</button>
+        <button id="joinSession">Join stream</button>
+        <div id="warning" class="warning hidden"></div>
+      </fieldset>
+    </section>
+    <section class="panel hidden" id="statusPanel">
+      <p class="section-title">Stream status</p>
+      <div class="status-grid">
+        <div class="status-card">
+          <span class="status-dot" id="cameraLight"></span>
+          <span class="status-label">Camera</span>
+        </div>
+        <div class="status-card">
+          <span class="status-dot" id="gpsLight"></span>
+          <span class="status-label">GPS</span>
+        </div>
+      </div>
+      <button id="muteButton" class="chat-send" style="margin-top: 18px; width: 100%;">Mute mic</button>
+      <div class="chat-box">
+        <div class="chat-log" id="chatLogStatus"></div>
+        <div class="chat-row">
+          <input id="chatInputStatus" class="chat-input" type="text" placeholder="Send a message..." />
+          <button id="sendChatStatus" class="chat-send">Send</button>
+        </div>
+      </div>
+    </section>
+    <section class="panel row hidden" id="viewerPanel">
+      <div>
+        <h2>Remote Video</h2>
+        <video id="remoteVideo" autoplay playsinline controls></video>
+        <p id="videoStatus" class="info">Not connected.</p>
+      </div>
+      <div>
+        <h2>Remote Location</h2>
+        <div id="map"></div>
+        <p id="gpsStatus" class="info">No location yet.</p>
+      </div>
+      <div class="chat-box" style="width:100%;">
+        <div class="chat-log" id="chatLogViewer"></div>
+        <div class="chat-row">
+          <input id="chatInputViewer" class="chat-input" type="text" placeholder="Send a message..." />
+          <button id="sendChatViewer" class="chat-send">Send</button>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
