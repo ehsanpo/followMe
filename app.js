@@ -288,7 +288,21 @@ async function startBroadcast(sessionId) {
         authorizedViewers.add(conn.peer);
         dataConnection = conn;
         conn.send({ type: 'auth-result', success: true, message: 'Password correct. Sending video.' });
-        gpsStatus.textContent = 'Viewer authorized. Waiting for viewer request.';
+        gpsStatus.textContent = 'Viewer authorized. Starting stream.';
+        if (!currentCall) {
+          const viewerCall = peer.call(conn.peer, stream);
+          currentCall = viewerCall;
+          logStatus('Viewer connected. Streaming video...');
+          viewerCall.on('close', () => logStatus('Viewer disconnected.'));
+          viewerCall.on('error', (err) => console.error(err));
+        }
+      }
+      if (data.type === 'ready-for-video' && authorizedViewers.has(conn.peer) && !currentCall) {
+        const viewerCall = peer.call(conn.peer, stream);
+        currentCall = viewerCall;
+        logStatus('Viewer connected after ready signal.');
+        viewerCall.on('close', () => logStatus('Viewer disconnected.'));
+        viewerCall.on('error', (err) => console.error(err));
       }
       if (data.type === 'chat') {
         appendChatMessage('Viewer', data.text);
@@ -359,18 +373,9 @@ function joinAsViewer(sessionId) {
           showPanel(controlsPanel);
           return;
         }
-          logStatus('Authorized; requesting host video...');
-          showPanel(viewerPanel);
-          try {
-            peer.call(sessionId, null);
-          } catch (err) {
-            console.warn('Viewer stream request failed, retrying with empty stream:', err);
-            try {
-              peer.call(sessionId, new MediaStream());
-            } catch (retryErr) {
-              console.error('Viewer stream request retry failed:', retryErr);
-            }
-          }
+        logStatus('Authorized; waiting for host video...');
+        showPanel(viewerPanel);
+        dataConnection.send({ type: 'ready-for-video' });
         return;
       }
       if (data.type === 'gps-update') {
