@@ -29,6 +29,9 @@ let isLocationOn = true;
 let cameraFacingMode = 'user'; // 'user' = front, 'environment' = back
 let gpsWatchId = null;
 let wakeLock = null;
+let peerRetryCount = 0;
+const peerHosts = ['0.peerjs.com', 'peerjs-server.herokuapp.com'];
+let currentPeerHostIndex = 0;
 
 function parseQuery() {
   const params = new URLSearchParams(window.location.search);
@@ -202,9 +205,11 @@ function showWarning(text) {
 
 function defaultPeerOptions() {
   return {
-    host: '0.peerjs.com',
+    host: peerHosts[currentPeerHostIndex],
     port: 443,
     secure: true,
+    path: '/peerjs',
+    debug: 3,
     config: {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -213,15 +218,37 @@ function defaultPeerOptions() {
     }
   };
 }
+function nextPeerHost() {
+  currentPeerHostIndex = (currentPeerHostIndex + 1) % peerHosts.length;
+  return peerHosts[currentPeerHostIndex];
+}
 
 function startPeer(sessionId) {
+  if (peer) {
+    try {
+      peer.destroy();
+    } catch (err) {
+      console.warn('Failed to destroy old peer:', err);
+    }
+  }
   peer = new Peer(sessionId, defaultPeerOptions());
 
   peer.on('open', () => {
+    peerRetryCount = 0;
     logStatus(`Peer ready.`);
   });
 
   peer.on('error', (err) => {
+    console.error('Peer error on signal host', peerHosts[currentPeerHostIndex], err);
+    if (peerRetryCount < peerHosts.length - 1) {
+      peerRetryCount += 1;
+      const failedHost = peerHosts[currentPeerHostIndex];
+      const nextHostName = nextPeerHost();
+      console.warn(`Peer host ${failedHost} failed, retrying with ${nextHostName}`);
+      logStatus(`Retrying signal server...`);
+      startPeer(sessionId);
+      return;
+    }
     logStatus(`Peer error: ${err}`);
     console.error(err);
   });
