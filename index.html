@@ -67,7 +67,12 @@
           <span class="status-label">GPS</span>
         </div>
       </div>
-      <button id="muteButton" class="chat-send" style="margin-top: 18px; width: 100%;">Mute mic</button>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 18px;">
+        <button id="toggleCameraBtn" class="chat-send" style="width: 100%; padding: 10px 12px; font-size: 0.9rem;">Turn off camera</button>
+        <button id="toggleLocationBtn" class="chat-send" style="width: 100%; padding: 10px 12px; font-size: 0.9rem;">Turn off GPS</button>
+        <button id="switchCameraBtn" class="chat-send" style="width: 100%; padding: 10px 12px; font-size: 0.9rem;">Switch camera</button>
+      </div>
+      <button id="muteButton" class="chat-send" style="margin-top: 10px; width: 100%;">Mute mic</button>
       <div class="chat-box">
         <div class="chat-log" id="chatLogStatus"></div>
         <div class="chat-row">

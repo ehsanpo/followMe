@@ -24,6 +24,11 @@ let sessionPassword = '';
 let authorizedViewers = new Set();
 let localStream = null;
 let isMicMuted = false;
+let isCameraOn = true;
+let isLocationOn = true;
+let cameraFacingMode = 'user'; // 'user' = front, 'environment' = back
+let gpsWatchId = null;
+let wakeLock = null;
 
 function parseQuery() {
   const params = new URLSearchParams(window.location.search);
@@ -66,22 +71,100 @@ function sendChatMessage(message) {
 }
 
 function toggleMute() {
-  peer.on('call', (call) => {
-    call.answer();
-    call.on('stream', (remoteStream) => {
-      remoteVideo.srcObject = remoteStream;
-      videoStatus.textContent = 'Live video received.';
-      remoteVideo.muted = false;
-      remoteVideo.play().catch(() => {});
-    });
-    call.on('error', (err) => console.error(err));
-  });
   if (!localStream) return;
   isMicMuted = !isMicMuted;
   localStream.getAudioTracks().forEach((track) => {
     track.enabled = !isMicMuted;
   });
   muteButton.textContent = isMicMuted ? 'Unmute mic' : 'Mute mic';
+}
+
+function toggleCamera() {
+  if (!localStream) return;
+  isCameraOn = !isCameraOn;
+  localStream.getVideoTracks().forEach((track) => {
+    track.enabled = isCameraOn;
+  });
+  setLight(cameraLight, isCameraOn);
+}
+
+function toggleLocation() {
+  if (!isLocationOn) {
+    // Turn location back on
+    isLocationOn = true;
+    if ('geolocation' in navigator) {
+      gpsWatchId = navigator.geolocation.watchPosition((position) => {
+        const payload = {
+          type: 'gps-update',
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          timestamp: Date.now()
+        };
+        setGpsActive(true);
+        if (dataConnection && dataConnection.open) {
+          dataConnection.send(payload);
+        }
+      }, (error) => {
+        gpsStatus.textContent = `GPS error: ${error.message}`;
+      }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 });
+    }
+  } else {
+    // Turn location off
+    isLocationOn = false;
+    if (gpsWatchId !== null) {
+      navigator.geolocation.clearWatch(gpsWatchId);
+      gpsWatchId = null;
+    }
+  }
+  setGpsActive(isLocationOn);
+}
+
+async function switchCamera() {
+  if (!localStream) return;
+  cameraFacingMode = cameraFacingMode === 'user' ? 'environment' : 'user';
+  
+  // Stop current video track
+  localStream.getVideoTracks().forEach((track) => track.stop());
+  
+  try {
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: cameraFacingMode },
+      audio: false
+    });
+    
+    const newVideoTrack = newStream.getVideoTracks()[0];
+    localStream.removeTrack(localStream.getVideoTracks()[0]);
+    localStream.addTrack(newVideoTrack);
+    
+    // Send updated stream to active call
+    if (currentCall && currentCall.peerConnection) {
+      const sender = currentCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+      if (sender) {
+        await sender.replaceTrack(newVideoTrack);
+      }
+    }
+  } catch (err) {
+    logStatus(`Camera switch error: ${err.message}`);
+    cameraFacingMode = cameraFacingMode === 'user' ? 'environment' : 'user';
+  }
+}
+
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log('Wake lock acquired.');
+    }
+  } catch (err) {
+    console.warn('Wake lock failed:', err);
+  }
+}
+
+function releaseWakeLock() {
+  if (wakeLock) {
+    wakeLock.release().catch(err => console.warn('Wake lock release error:', err));
+    wakeLock = null;
+  }
 }
 
 function initMap() {
@@ -156,6 +239,8 @@ async function startBroadcast(sessionId) {
     return;
   }
 
+  requestWakeLock();
+
   startPeer(sessionId || `followme-${Math.random().toString(36).slice(2, 10)}`);
 
   let stream;
@@ -163,13 +248,17 @@ async function startBroadcast(sessionId) {
     stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     localStream = stream;
     isMicMuted = false;
+    isCameraOn = true;
+    isLocationOn = true;
     if (muteButton) muteButton.textContent = 'Mute mic';
     showPanel(statusPanel);
     setLight(cameraLight, true);
+    setLight(gpsLight, true);
   } catch (err) {
     logStatus(`Camera/microphone error: ${err.message}`);
     createBtn.disabled = false;
     joinBtn.disabled = false;
+    releaseWakeLock();
     return;
   }
 
@@ -217,7 +306,7 @@ async function startBroadcast(sessionId) {
   });
 
   if ('geolocation' in navigator) {
-    navigator.geolocation.watchPosition((position) => {
+    gpsWatchId = navigator.geolocation.watchPosition((position) => {
       const payload = {
         type: 'gps-update',
         latitude: position.coords.latitude,
@@ -333,6 +422,30 @@ if (sendChatViewer) {
     if (!message) return;
     sendChatMessage(message);
     chatInputViewer.value = '';
+  });
+}
+
+const toggleCameraBtn = document.getElementById('toggleCameraBtn');
+const toggleLocationBtn = document.getElementById('toggleLocationBtn');
+const switchCameraBtn = document.getElementById('switchCameraBtn');
+
+if (toggleCameraBtn) {
+  toggleCameraBtn.addEventListener('click', () => {
+    toggleCamera();
+    toggleCameraBtn.textContent = isCameraOn ? 'Turn off camera' : 'Turn on camera';
+  });
+}
+
+if (toggleLocationBtn) {
+  toggleLocationBtn.addEventListener('click', () => {
+    toggleLocation();
+    toggleLocationBtn.textContent = isLocationOn ? 'Turn off GPS' : 'Turn on GPS';
+  });
+}
+
+if (switchCameraBtn) {
+  switchCameraBtn.addEventListener('click', () => {
+    switchCamera();
   });
 }
 
